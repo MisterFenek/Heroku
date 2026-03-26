@@ -147,6 +147,8 @@ class RemoteStorage:
         """
         url, repo, module_name = self._parse_url(url)
         try:
+            # Исправлено: принудительное преобразование хеша в строку для предотвращения InvalidHeader
+            git_hash = utils.get_git_hash()
             r = await utils.run_sync(
                 requests.get,
                 url,
@@ -154,7 +156,7 @@ class RemoteStorage:
                 headers={
                     "User-Agent": "Heroku Userbot",
                     "X-Heroku-Version": ".".join(map(str, __version__)),
-                    "X-Heroku-Commit-SHA": utils.get_git_hash(),
+                    "X-Heroku-Commit-SHA": str(git_hash) if git_hash else "unknown",
                     "X-Heroku-User": str(self._client.tg_id),
                 },
             )
