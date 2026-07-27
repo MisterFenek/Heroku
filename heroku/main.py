@@ -79,6 +79,7 @@ BASE_DIR = (
     else os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 )
 
+SESSIONS_DIR = BASE_DIR
 BASE_PATH = Path(BASE_DIR)
 CONFIG_PATH = BASE_PATH / "config.json"
 
@@ -490,13 +491,14 @@ class Heroku:
     """Main userbot instance, which can handle multiple clients"""
 
     def __init__(self):
-        global BASE_DIR, BASE_PATH, CONFIG_PATH
+        global BASE_DIR, SESSIONS_DIR, BASE_PATH, CONFIG_PATH
         self.omit_log = False
         self.arguments = parse_arguments()
         if self.arguments.no_git:
             os.environ["HEROKU_NO_GIT"] = "1"
         if self.arguments.data_root:
             BASE_DIR = self.arguments.data_root
+            SESSIONS_DIR = BASE_DIR
             BASE_PATH = Path(BASE_DIR)
             CONFIG_PATH = BASE_PATH / "config.json"
         try:
