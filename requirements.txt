@@ -1,4 +1,5 @@
 herokutl==2.1.0
+aiogram
 pyaes
 aiofile==3.8.1
 aiofiles==24.1.0
@@ -17,5 +18,3 @@ ruamel.yaml==0.17.21
 bs4==0.0.2
 orjson
 Pillow
-
-# Python 3.10+

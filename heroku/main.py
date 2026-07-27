@@ -1182,7 +1182,7 @@ class Heroku:
     async def amain(self, first: bool, client: CustomTelegramClient):
         """Entrypoint for async init, run once for each user"""
         client.parse_mode = "HTML"
-        await client.start()
+        await client.start(phone=raise_auth)
 
         db = database.Database(client)
         client.heroku_db = db
