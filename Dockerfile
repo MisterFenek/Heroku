@@ -39,6 +39,6 @@ COPY . .
 
 RUN pip install --no-cache-dir -U -r requirements.txt
 
-EXPOSE 8080
+EXPOSE 8088
 
 CMD ["python3", "-m", "heroku", "--root"]
