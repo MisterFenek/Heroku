@@ -1023,6 +1023,17 @@ class Heroku:
                     patcher.patch(client, session)
 
                 await client.connect()
+                if not await client.is_user_authorized():
+                    logging.warning(
+                        "Session '%s' is not authorized. Removing unauthenticated session file to allow Web UI setup.",
+                        session.filename,
+                    )
+                    await client.disconnect()
+                    Path(session.filename).unlink(missing_ok=True)
+                    if session in self.sessions:
+                        self.sessions.remove(session)
+                    continue
+
                 client.phone = "None"
 
                 self.clients += [client]
