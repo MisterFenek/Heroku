@@ -1,5 +1,8 @@
 herokutl==2.1.0
 aiogram
+aiohttp_jinja2
+Jinja2
+werkzeug
 pyaes
 aiofile==3.8.1
 aiofiles==24.1.0
