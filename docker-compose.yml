@@ -3,6 +3,8 @@ services:
     container_name: heroku_ub
     build:
       context: .
+    stdin_open: true
+    tty: true
     volumes:
       - worker:/data
     stop_signal: SIGINT
