@@ -22,6 +22,21 @@ from pathlib import Path
 
 from ._internal import restart
 
+# Polyfill emoji module for backwards compatibility before importing herokutl or core packages
+try:
+    import emoji
+
+    if not hasattr(emoji, "get_emoji_unicode_dict"):
+        def _get_emoji_unicode_dict(lang="en"):
+            data = getattr(emoji, "EMOJI_DATA", {})
+            return {k: v.get(lang, k) if isinstance(v, dict) else k for k, v in data.items()}
+        emoji.get_emoji_unicode_dict = _get_emoji_unicode_dict
+
+    if not hasattr(emoji, "UNICODE_EMOJI"):
+        emoji.UNICODE_EMOJI = {"en": getattr(emoji, "EMOJI_DATA", {})}
+except Exception:
+    pass
+
 if "--no-git" in sys.argv:
     os.environ["HEROKU_NO_GIT"] = "1"
 
