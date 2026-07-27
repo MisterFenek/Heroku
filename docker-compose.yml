@@ -5,6 +5,7 @@ services:
       context: .
     stdin_open: true
     tty: true
+    init: true
     volumes:
       - worker:/data
     stop_signal: SIGINT

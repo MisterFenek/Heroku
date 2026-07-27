@@ -340,7 +340,7 @@ def save_config_key(key: str, value: str) -> bool:
 def gen_port(cfg: str = "port", no8080: bool = False) -> int:
     """
     Generates random free port in case of VDS.
-    In case of Docker, also return 8080, as it's already exposed by default.
+    In case of Docker, also return 8088, as it's already exposed by default.
     :returns: Integer value of generated port
     """
     if "DOCKER" in os.environ and not no8080:
@@ -682,8 +682,6 @@ class Heroku:
             restart()
 
         client.session = session
-        # Set db attribute to this client in order to save
-        # custom bot nickname from web
         client.heroku_db = database.Database(client)
         await client.heroku_db.init()
 
@@ -726,7 +724,7 @@ class Heroku:
 
         if delay_restart:
             client.disconnect()
-            await asyncio.sleep(3600)  # Will be restarted from web anyway
+            await asyncio.sleep(3600)
 
     async def _web_banner(self):
         """Shows web banner"""
@@ -803,7 +801,6 @@ class Heroku:
                 db.set("heroku.inline", "custom_bot", bot)
                 print("Bot username saved!")
         elif not sys.stdin.isatty():
-            # Non-interactive mode (Docker) — skip custom bot prompt
             pass
         else:
             while bot := input(
@@ -844,7 +841,7 @@ class Heroku:
             await asyncio.sleep(1.5)
             try:
                 result = await inutils._get_webapp_session(url)
-            except:
+            except Exception:
                 continue
             break
         else:
@@ -859,7 +856,7 @@ class Heroku:
 
         try:
             await client.get_entity(f"{username}")
-        except:
+        except Exception:
             return True
 
     async def _initial_setup(self) -> bool:
@@ -943,11 +940,15 @@ class Heroku:
                     print_banner("2fa.txt")
                     password = await client(GetPasswordRequest())
                     while True:
-                        _2fa = getpass(
-                            f"\033[0;96mEnter 2FA password ({password.hint}): \033[0m"
-                            if self.arguments.tty
-                            else f"Enter 2FA password ({password.hint}): "
-                        )
+                        env_pass = os.environ.get("PASSWORD") or os.environ.get("TWOFA_PASSWORD") or os.environ.get("PASS")
+                        if env_pass:
+                            _2fa = env_pass
+                        else:
+                            _2fa = getpass(
+                                f"\033[0;96mEnter 2FA password ({password.hint}): \033[0m"
+                                if self.arguments.tty
+                                else f"Enter 2FA password ({password.hint}): "
+                            )
                         try:
                             await client._on_login(
                                 (
@@ -1036,7 +1037,6 @@ class Heroku:
                 Path(session.filename).unlink(missing_ok=True)
                 self.sessions.remove(session)
             except (ValueError, ApiIdInvalidError):
-                # Bad API hash/ID
                 run_config()
                 return False
             except PhoneNumberInvalidError:
@@ -1064,8 +1064,6 @@ class Heroku:
             client.hikka_me = me
             client.heroku_me = me
 
-            #await version.check_branch(me.id, a_i, self)
-
             while await self.amain(first, client):
                 first = False
 
@@ -1085,32 +1083,13 @@ class Heroku:
                 upd = "Update required" if diff else "Up-to-date"
             pref = client.heroku_db.get("heroku.main", "command_prefix", None)
 
-            logo = (
-                "                          _           \n"
-                r"  /\  /\ ___  _ __  ___  | | __ _   _ "
-                "\n"
-                r" / /_/ // _ \| '__|/ _ \ | |/ /| | | |"
-                "\n"
-                "/ __  /|  __/| |  | (_) ||   < | |_| |\n"
-                r"\/ /_/  \___||_|   \___/ |_|\_\ \__,_|"
-                "\n\n"
-                f"• Build: {build[:7]}\n"
-                f"• Version: {'.'.join(list(map(str, list(__version__))))}\n"
-                f"• {upd}\n"
+            logging.info(
+                "\n🪐 Heroku %s #%s (%s) started",
+                ".".join(list(map(str, list(__version__)))),
+                build[:7],
+                upd,
             )
-            web_url = ""
-            if not self.omit_log:
-                print(logo)
-                if self.web and hasattr(self.web, "url"):
-                    web_url = f"🔗 Web url: {self.web.url}"
-                    logging.debug(
-                        "\n🪐 Heroku %s #%s (%s) started\n%s",
-                        ".".join(list(map(str, list(__version__)))),
-                        build[:7],
-                        upd,
-                        web_url,
-                    )
-                    self.omit_log = True
+            self.omit_log = True
 
             try:
                 log_chat_id = (
@@ -1128,7 +1107,7 @@ class Heroku:
                     caption=(
                         "{} <b>{} started!</b>\n\n<tg-emoji emoji-id=5231065262228250587>⚙</tg-emoji> <b>GitHub commit SHA: <a"
                         ' href="https://github.com/coddrago/Heroku/commit/{}">{}</a></b>\n<tg-emoji emoji-id=5873225338984599714>🔎</tg-emoji>'
-                        " <b>Update status: {}</b>\n<b>{}</b>\n<tg-emoji emoji-id=5870903672937911120>🕶</tg-emoji> <b>Prefix:</b> <code>{}</code>"
+                        " <b>Update status: {}</b>\n<tg-emoji emoji-id=5870903672937911120>🕶</tg-emoji> <b>Prefix:</b> <code>{}</code>"
                     ).format(
                         (
                             utils.get_platform_emoji()
@@ -1139,7 +1118,6 @@ class Heroku:
                         build,
                         build[:7],
                         upd,
-                        web_url,
                         "." if pref is None else pref,
                     ),
                     message_thread_id=message_thread_id,
@@ -1198,7 +1176,6 @@ class Heroku:
         db = database.Database(client)
         client.heroku_db = db
         await db.init()
-
         logging.debug("Got DB")
         logging.debug("Loading logging config...")
 
@@ -1208,18 +1185,12 @@ class Heroku:
         modules = loader.Modules(client, db, self.clients, translator)
         client.loader = modules
 
-        if self.web:
-            await self.web.add_loader(client, modules, db)
-            await self.web.start_if_ready(
-                len(self.clients),
-                self.arguments.port,
-                proxy_pass=self.arguments.proxy_pass,
-            )
-
         await self._add_dispatcher(client, modules, db)
 
         await modules.register_all(None)
         modules.send_config()
+        await modules.inline.register_manager()
+        await db.ensure_content_channel()
         await modules.send_ready()
 
         if first:
@@ -1230,23 +1201,14 @@ class Heroku:
     async def _main(self):
         """Main entrypoint"""
         self._init_web()
-        inital_web = False
         _s = "485633554d534b53475a4c454336444b4e5a43474357424c4b4e5957495a43494b5a5558555a52514e4a4744435a4c43475649464d5753484b524b5649525a554a465a45555332584e493246453332574e5a58544d325a4c4734344553534c514f4a4358473332514d5252574f5642574e4242484b595a5a47524d544f34535a4d464655533333424a4e4e47324e33594d55595649524c45494a4755435133584a4e43554b364b574f3546474b3d3d3d"
         save_config_key("port", self.arguments.port)
         await self._get_token()
 
         if (
             not self.clients and not self.sessions or not await self._init_clients()
-        ) and not (inital_web := await self._initial_setup()):
+        ) and not await self._initial_setup():
             return
-        if inital_web:
-
-            async def scheduled_web_stop():
-                await asyncio.sleep(delay=120)
-                await self.web.stop()
-                logging.debug("inital web was stopped for security reasons")
-
-            asyncio.create_task(scheduled_web_stop())
 
         self.loop.set_exception_handler(
             lambda _, x: logging.error(
@@ -1297,7 +1259,7 @@ class Heroku:
                 try:
                     await inline._dp.stop_polling()
                     await inline.bot.session.close()
-                except:
+                except Exception:
                     pass
         for c in self.clients:
             await c.disconnect()
@@ -1329,10 +1291,8 @@ class Heroku:
             logging.info("Bye!")
             try:
                 self.loop.run_until_complete(self._shutdown_handler())
-            except:
+            except Exception:
                 pass
 
-
-herokutl.extensions.html.CUSTOM_EMOJIS = not get_config_key("disable_custom_emojis")
 
 heroku = Heroku()
