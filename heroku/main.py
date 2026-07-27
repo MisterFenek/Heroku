@@ -532,55 +532,85 @@ class Heroku:
     def _read_sessions(self):
         """Gets sessions from environment and data directory"""
         self.sessions = []
-        self.sessions += [
-            SQLiteSession(
-                os.path.join(
-                    BASE_DIR,
-                    session.rsplit(".session", maxsplit=1)[0],
+        if os.path.exists(BASE_DIR):
+            self.sessions += [
+                SQLiteSession(
+                    os.path.join(
+                        BASE_DIR,
+                        session.rsplit(".session", maxsplit=1)[0],
+                    )
                 )
-            )
-            for session in filter(
-                lambda f: f.startswith("heroku-")
-                or f.startswith("hikka-")
-                and f.endswith(".session"),
-                os.listdir(BASE_DIR),
-            )
-        ]
+                for session in filter(
+                    lambda f: (f.startswith("heroku-") or f.startswith("hikka-"))
+                    and f.endswith(".session"),
+                    os.listdir(BASE_DIR),
+                )
+            ]
+
+        session_str = (
+            os.environ.get("STRING_SESSION")
+            or os.environ.get("SESSION_STRING")
+            or os.environ.get("SESSION")
+        )
+        if session_str and session_str.strip():
+            env_session_name = "heroku-env"
+            session_file = os.path.join(BASE_DIR, f"{env_session_name}.session")
+            sqlite_sess = SQLiteSession(os.path.join(BASE_DIR, env_session_name))
+            if not os.path.exists(session_file):
+                try:
+                    from herokutl.sessions import StringSession
+                    temp_str_sess = StringSession(session_str.strip())
+                    sqlite_sess.auth_key = temp_str_sess.auth_key
+                    sqlite_sess.server_address = temp_str_sess.server_address
+                    sqlite_sess.port = temp_str_sess.port
+                    sqlite_sess.dc_id = temp_str_sess.dc_id
+                    sqlite_sess.save()
+                    logging.info("Successfully imported StringSession from environment variable into %s", session_file)
+                except Exception as e:
+                    logging.error("Failed to import StringSession from environment: %s", e)
+            if not any(getattr(s, "filename", None) == sqlite_sess.filename for s in self.sessions):
+                self.sessions.append(sqlite_sess)
 
     def _get_api_token(self):
         """Get API Token from disk or environment"""
         api_token_type = collections.namedtuple("api_token", ("ID", "HASH"))
 
-        # Try to retrieve credintials from config, or from env vars
+        # Try to retrieve credentials from config, or from env vars
         try:
-            # Legacy migration
             if not get_config_key("api_id"):
-                api_id, api_hash = (
-                    line.strip()
-                    for line in (Path(BASE_DIR) / "api_token.txt")
-                    .read_text()
-                    .splitlines()
-                )
-                save_config_key("api_id", int(api_id))
-                save_config_key("api_hash", api_hash)
-                (Path(BASE_DIR) / "api_token.txt").unlink()
-                logging.debug("Migrated api_token.txt to config.json")
+                api_id = os.environ.get("API_ID") or os.environ.get("api_id")
+                api_hash = os.environ.get("API_HASH") or os.environ.get("api_hash")
+                if api_id and api_hash:
+                    save_config_key("api_id", int(api_id))
+                    save_config_key("api_hash", api_hash)
+                    self.api_token = api_token_type(int(api_id), api_hash)
+                    return
+
+                if (Path(BASE_DIR) / "api_token.txt").exists():
+                    api_id, api_hash = (
+                        line.strip()
+                        for line in (Path(BASE_DIR) / "api_token.txt")
+                        .read_text()
+                        .splitlines()
+                    )
+                    save_config_key("api_id", int(api_id))
+                    save_config_key("api_hash", api_hash)
+                    (Path(BASE_DIR) / "api_token.txt").unlink()
+                    logging.debug("Migrated api_token.txt to config.json")
 
             api_token = api_token_type(
                 get_config_key("api_id"),
                 get_config_key("api_hash"),
             )
-        except FileNotFoundError:
-            try:
-                from . import api_token
-            except ImportError:
-                try:
-                    api_token = api_token_type(
-                        os.environ["api_id"],
-                        os.environ["api_hash"],
-                    )
-                except KeyError:
-                    api_token = None
+        except Exception:
+            api_id = os.environ.get("API_ID") or os.environ.get("api_id")
+            api_hash = os.environ.get("API_HASH") or os.environ.get("api_hash")
+            if api_id and api_hash:
+                api_token = api_token_type(int(api_id), api_hash)
+                save_config_key("api_id", int(api_id))
+                save_config_key("api_hash", api_hash)
+            else:
+                api_token = None
 
         self.api_token = api_token
 
@@ -721,11 +751,40 @@ class Heroku:
         return False
 
     async def _phone_login(self, client: CustomTelegramClient) -> bool:
-        phone = input(
-            "\033[0;96mEnter phone: \033[0m" if self.arguments.tty else "Enter phone: "
+        env_phone = (
+            os.environ.get("PHONE")
+            or os.environ.get("PHONE_NUMBER")
+            or os.environ.get("TELEGRAM_PHONE")
+        )
+        if env_phone:
+            phone = env_phone.strip()
+        elif not sys.stdin.isatty():
+            logging.error("Non-interactive terminal detected and no PHONE or STRING_SESSION environment variable set.")
+            return False
+        else:
+            phone = input(
+                "\033[0;96mEnter phone: \033[0m" if self.arguments.tty else "Enter phone: "
+            )
+
+        env_code = (
+            os.environ.get("TG_CODE")
+            or os.environ.get("CODE")
+            or os.environ.get("AUTH_CODE")
+        )
+        env_password = (
+            os.environ.get("PASSWORD")
+            or os.environ.get("TWOFA_PASSWORD")
+            or os.environ.get("PASS")
         )
 
-        await client.start(phone)
+        code_cb = (lambda: env_code.strip()) if env_code else None
+        password_cb = (lambda: env_password.strip()) if env_password else None
+
+        await client.start(
+            phone=phone,
+            code_callback=code_cb,
+            password=password_cb,
+        )
 
         me = await client.get_me()
         telegram_id = me.id
@@ -737,19 +796,29 @@ class Heroku:
         db = database.Database(client)
         await db.init()
 
-        while bot := input(
-            "You can enter a custom bot username or leave it empty and Heroku will generate a random one: "
-        ):
-            try:
-                if await self._check_bot(client, bot):
-                    db.set("heroku.inline", "custom_bot", bot)
-                    print("Bot username saved!")
-                    break
-                else:
-                    print("Bot username is occupied. Try again or leave it empty")
-                    continue
-            except Exception:
-                print("Something went wrong")
+        bot_env = os.environ.get("BOT_USERNAME") or os.environ.get("CUSTOM_BOT")
+        if bot_env:
+            bot = bot_env.strip().lstrip("@")
+            if await self._check_bot(client, bot):
+                db.set("heroku.inline", "custom_bot", bot)
+                print("Bot username saved!")
+        elif not sys.stdin.isatty():
+            # Non-interactive mode (Docker) — skip custom bot prompt
+            pass
+        else:
+            while bot := input(
+                "You can enter a custom bot username or leave it empty and Heroku will generate a random one: "
+            ):
+                try:
+                    if await self._check_bot(client, bot):
+                        db.set("heroku.inline", "custom_bot", bot)
+                        print("Bot username saved!")
+                        break
+                    else:
+                        print("Bot username is occupied. Try again or leave it empty")
+                        continue
+                except Exception:
+                    print("Something went wrong")
 
         await self.save_client_session(client)
         self.clients += [client]
@@ -821,11 +890,14 @@ class Heroku:
                 )
             )
 
-            user_choice = input(
-                "\033[0;96mUse QR code? [y/N]: \033[0m"
-                if self.arguments.tty
-                else "Use QR code? [y/N]: "
-            ).lower()
+            if not sys.stdin.isatty() or os.environ.get("PHONE") or os.environ.get("PHONE_NUMBER"):
+                user_choice = "n"
+            else:
+                user_choice = input(
+                    "\033[0;96mUse QR code? [y/N]: \033[0m"
+                    if self.arguments.tty
+                    else "Use QR code? [y/N]: "
+                ).lower()
 
             match user_choice:
                 case "y":
