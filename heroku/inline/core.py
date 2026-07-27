@@ -272,7 +272,7 @@ class InlineManager(
         )
 
         try:
-            await self._bot_client.start(bot_token=self._token)
+            await self._bot_client.start(phone=main.raise_auth, bot_token=self._token)
             self.bot = TelethonBot(self._bot_client)
             self._bot = self.bot
             self._register_builtin_handlers()
